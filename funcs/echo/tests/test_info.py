@@ -1,12 +1,12 @@
 
 
-from code.info import get_runtime_env
+from code.info import handler
+import json
 
-
-def test_getInfo():
+def test_handler():
   event = {'foo': 'hi'}
-  res = get_runtime_env(event=event, context={})
-  print(res)
-  assert res != None
-  assert res['event'] !=None, 'Has event'
-  assert res['event']['foo'] == 'hi', 'Event we add matches'
+  res = handler(event=event, context={})
+  assert res['statusCode'] == 200
+  body =  json.loads(res['body'])
+  assert body['event'] !=None, 'Has event'
+  assert body['event']['foo'] == 'hi', 'Event we add matches'
