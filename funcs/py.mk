@@ -17,7 +17,7 @@ build:
 lambda: $(source_files)
 	@rm -rf lambda/*
 	@mkdir -p lambda/app
-	@[ -f $(REQUIREMENTS) ] && pip install --target lambda/app -r $(REQUIREMENTS) || true
+	@[ -f $(REQUIREMENTS) ] && pip install --target lambda -r $(REQUIREMENTS) || true
 	@cp -r ./code/*.py lambda/app
 
 

@@ -12,7 +12,9 @@ def get_runtime_env(event):
       'event': event
   }
 
-
+#
+# Handler
+#
 def handler(event, context):
   env = get_runtime_env(event)
   return response(res=env)

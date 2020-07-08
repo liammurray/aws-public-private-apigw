@@ -1,4 +1,3 @@
-
 import { expect } from 'chai'
 import sinon from 'sinon'
 // import AWS from 'aws-sdk'
@@ -8,10 +7,8 @@ import { handler } from '~/index'
 import { readMockData, readSwagger } from './utils/readData'
 import { OpenAPIV3 } from 'openapi-types'
 
-
-describe('handler', function() {
-
-  it('should return response', async function() {
+describe('handler', function () {
+  it('should return response', async function () {
     const event = (await readMockData('eventGetOrder')) as APIGatewayEvent
 
     const response = await handler(event)
@@ -24,5 +21,4 @@ describe('handler', function() {
     // console.log('SCHEMA', JSON.stringify(schema, null, 2))
     // expect(body).to.be.jsonSchema(schema)
   })
-
 })

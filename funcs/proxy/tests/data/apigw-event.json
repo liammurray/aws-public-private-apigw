@@ -1,0 +1,59 @@
+{
+  "resource": "/v1/echo/api",
+  "path": "/v1/echo/api",
+  "httpMethod": "GET",
+  "headers": {
+    "accept": "*/*",
+    "Host": "3aso80og16.execute-api.us-west-2.amazonaws.com",
+    "User-Agent": "curl/7.64.1",
+    "X-Amzn-Trace-Id": "Root=1-5f06066f-5f4673481e574d682f24f2c8",
+    "X-Forwarded-For": "67.165.112.159",
+    "X-Forwarded-Port": "443",
+    "X-Forwarded-Proto": "https"
+  },
+  "multiValueHeaders": {
+    "accept": ["*/*"],
+    "Host": ["3aso80og16.execute-api.us-west-2.amazonaws.com"],
+    "User-Agent": ["curl/7.64.1"],
+    "X-Amzn-Trace-Id": ["Root=1-5f06066f-5f4673481e574d682f24f2c8"],
+    "X-Forwarded-For": ["67.165.112.159"],
+    "X-Forwarded-Port": ["443"],
+    "X-Forwarded-Proto": ["https"]
+  },
+  "queryStringParameters": null,
+  "multiValueQueryStringParameters": null,
+  "pathParameters": null,
+  "stageVariables": null,
+  "requestContext": {
+    "resourceId": "93apv3",
+    "resourcePath": "/v1/echo/api",
+    "httpMethod": "GET",
+    "extendedRequestId": "PXXxdFh0PHcFcYg=",
+    "requestTime": "08/Jul/2020:17:46:23 +0000",
+    "path": "/active/v1/echo/api",
+    "accountId": "958019638877",
+    "protocol": "HTTP/1.1",
+    "stage": "active",
+    "domainPrefix": "3aso80og16",
+    "requestTimeEpoch": 1594230383640,
+    "requestId": "09f85cb4-01cf-457b-a464-5c14c2880862",
+    "identity": {
+      "cognitoIdentityPoolId": null,
+      "accountId": null,
+      "cognitoIdentityId": null,
+      "caller": null,
+      "sourceIp": "67.165.112.159",
+      "principalOrgId": null,
+      "accessKey": null,
+      "cognitoAuthenticationType": null,
+      "cognitoAuthenticationProvider": null,
+      "userArn": null,
+      "userAgent": "curl/7.64.1",
+      "user": null
+    },
+    "domainName": "3aso80og16.execute-api.us-west-2.amazonaws.com",
+    "apiId": "3aso80og16"
+  },
+  "body": null,
+  "isBase64Encoded": false
+}

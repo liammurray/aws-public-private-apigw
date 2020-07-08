@@ -26,7 +26,7 @@ list:
 
 lambda:
 	@for dir in $(subdirs); do \
-		echo Building lambda: [$$(basename $$dir)]; \
+		echo ">>> Running 'make lambda': [$$(basename $$dir)]"; \
 		$(MAKE) -C $$dir lambda; \
 	 done
 

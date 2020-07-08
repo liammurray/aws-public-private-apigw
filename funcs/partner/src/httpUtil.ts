@@ -1,4 +1,3 @@
-
 import HttpStatus from 'http-status-codes'
 import { APIGatewayEvent } from 'aws-lambda'
 import _get from 'lodash.get'
@@ -9,15 +8,15 @@ export type Body = { [key: string]: any }
 export type Response = { [key: string]: any }
 
 const CORS_HEADERS = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers':
-      'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token',
-    'Access-Control-Allow-Methods': 'GET, OPTIONS, POST',
-    'Cache-Control': 'no-store, no-cache, must-revalidate, max-age = 0',
-  }
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers':
+    'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS, POST',
+  'Cache-Control': 'no-store, no-cache, must-revalidate, max-age = 0',
+}
 
 export function getHeaders(hasBody: boolean, _contentType = 'application/json'): Headers {
-  let headers: Headers = {...CORS_HEADERS}
+  let headers: Headers = { ...CORS_HEADERS }
   if (hasBody) {
     headers = { ...headers, 'Content-Type': 'application/json' }
   }
