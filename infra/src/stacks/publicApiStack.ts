@@ -1,23 +1,32 @@
 import * as cdk from '@aws-cdk/core'
 import * as ec2 from '@aws-cdk/aws-ec2'
 import * as apigw from '@aws-cdk/aws-apigateway'
+import * as iam from '@aws-cdk/aws-iam'
 import * as logs from '@aws-cdk/aws-logs'
 import * as route53 from '@aws-cdk/aws-route53'
-import * as lambda from '@aws-cdk/aws-lambda'
 import * as certman from '@aws-cdk/aws-certificatemanager'
 import * as elbv2 from '@aws-cdk/aws-elasticloadbalancingv2'
+import * as lambda from '@aws-cdk/aws-lambda'
+import { Fn } from '@aws-cdk/core'
+import { cfnOutput } from '../utils'
+import { LambdaHelper } from '../lambdaUtils'
 
-import { addCorsOptions, getAllowVpcInvokePolicy } from '../apiGatewayUtils'
-import { LambdaHelper, cfnOutput } from '../utils'
+function invokePolicyStatement(funcArn: string): iam.PolicyStatement {
+  return new iam.PolicyStatement({
+    resources: [funcArn],
+    actions: ['lambda:InvokeFunction'],
+  })
+}
 
-const lambdaHelper = new LambdaHelper('../../funcs')
-
+const lambdaHelper = new LambdaHelper({
+  basePath: '../../funcs',
+  runtime: lambda.Runtime.PYTHON_3_8,
+})
 export interface PublicApiStackProps extends cdk.StackProps {
   // Required for route53 hosted zone lookup (can't use environment generic stack)
   readonly env: cdk.Environment
   readonly vpc: ec2.Vpc
   readonly nlb?: elbv2.NetworkLoadBalancer
-  readonly echoFuncName: string
   // Regional cert
   readonly certId: string
   // nod15c.com
@@ -26,6 +35,9 @@ export interface PublicApiStackProps extends cdk.StackProps {
   readonly prefix: string
 }
 
+/**
+ * Stack for demo Private API
+ */
 export default class PublicApiStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, private readonly props: PublicApiStackProps) {
     super(scope, id, props)
@@ -91,7 +103,7 @@ export default class PublicApiStack extends cdk.Stack {
     // })
 
     // v1 methods
-    this.addMethods(api.root.addResource('v1'))
+    this.addMethodsV1(props.vpc, api.root.addResource('v1'))
 
     const rec = this.addRoute53(dnsName, api)
 
@@ -101,19 +113,56 @@ export default class PublicApiStack extends cdk.Stack {
     cfnOutput(this, 'DomainName', rec.domainName)
   }
 
-  private addMethods(root: apigw.Resource) {
+  private addMethodsV1(vpc: ec2.Vpc, root: apigw.Resource) {
     // item.addMethod('DELETE', new apigateway.HttpIntegration('http://amazon.com'));
 
-    //////
-    // v1/echo
-    //  fuction name is my-function:v1 (with/without version/alias) or ARN
-    //  TODO
-    //   1) one that calls API
-    //   2) one that calls lambda service (other stack)
+    const { account, region } = cdk.Stack.of(this)
+
+    // GET v1/echo/lambda
+    //   Invokes downstream lambda function
     //
-    const echo = root.addResource('echo')
-    lambdaHelper.addPyInt(this, echo, 'GET', 'ProxyFunc', 'proxy', 'app.proxy.handler', {
-      DOWNSTREAM_FUNCTION_NAME: this.props.echoFuncName,
+    const downstreamFunc = Fn.importValue('PrivateDemoPrivateApi:EchoFuncAliasLive')
+    const downstreamFuncArn = `arn:aws:lambda:${region}:${account}:function:${downstreamFunc}`
+    lambdaHelper.addMethod(this, root.resourceForPath('echo/lambda'), 'GET', {
+      funcId: 'CallEchoLambaFunc',
+      dir: 'proxy',
+      funcProps: {
+        handler: 'app.proxy.callLambda',
+        initialPolicy: [invokePolicyStatement(downstreamFuncArn)],
+        environment: {
+          // my-function:v1 (with/without version/alias) or ARN
+          DOWNSTREAM_FUNCTION_NAME: downstreamFunc,
+        },
+      },
+    })
+
+    const downstreamApi = Fn.importValue('PrivateDemoPrivateApi:ApiVpceUrl')
+    // Creates something like: ${Token[TOKEN.505]}v1/echo
+    // That then transforms to Fn::Join with Fn:Import in template
+    const downstreamEndpoint = `${downstreamApi}v1/echo`
+
+    const sg = new ec2.SecurityGroup(this, 'Outbound443SecurityGroup   ', {
+      vpc,
+      description: 'Allow outbound TCP 443',
+    })
+    sg.addEgressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'HTTPS anywhere')
+
+    // GET v1/echo/api
+    //   Attached to VPC isolated subnet
+    //   Call private API endpoint
+    //
+    lambdaHelper.addMethod(this, root.resourceForPath('echo/api'), 'GET', {
+      funcId: 'CallEchoApiFunc',
+      dir: 'proxy',
+      funcProps: {
+        handler: 'app.proxy.callEndpoint',
+        vpc,
+        vpcSubnets: { subnetType: ec2.SubnetType.ISOLATED },
+        securityGroup: sg,
+        environment: {
+          DOWNSTREAM_ENDPOINT: downstreamEndpoint,
+        },
+      },
     })
   }
 

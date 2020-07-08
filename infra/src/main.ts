@@ -9,37 +9,42 @@ import { getStringParams, getCallerAccount } from './awsUtils'
 
 const app = new cdk.App()
 
+// https://docs.aws.amazon.com/cdk/latest/guide/get_context_var.html
+// async function getContextOrSsm(app: cdk.App, name: string, path: string) {
+//   let val = app.node.tryGetContext(name)
+//   if (val === undefined) {
+//     ;[val] = await getStringParams(path)
+//   }
+//   return val
+// }
+
 getCallerAccount().then(async account => {
   const env = {
     account,
     region: process.env.AWS_REGION || 'us-west-2',
   }
+
+  // Get external env from SSM (also could use context or imports)
   const [certId, domain] = await getStringParams(
     '/cicd/common/certs/us-west-2',
     '/cicd/common/domain'
   )
 
   const vpc = new VpcStack(app, 'PrivateDemoVpc', {
-    includeNlb: false,
+    env,
+    cidr: '10.1.0.0/16',
+    includeNlb: true,
   })
   new PrivateApiStack(app, 'PrivateDemoPrivateApi', {
+    env,
     vpc: vpc.vpc,
     endpoint: vpc.vpcEndpoint,
   })
 
-  // test
-  //   1) vpc link to private api
-  //   2) lambda connected to vpc to private api
-  //   3) lambda invoke lambda
-  //
-  // partner.nod15c.com -> base path map to live/partner
-  // public.nod15c.com -> base path map to live/
-  //
   new PublicApiStack(app, 'PrivateDemoPublicApi', {
     env,
     vpc: vpc.vpc,
-    //nlb: vpc.nlb,
-    echoFuncName: 'TODO',
+    nlb: vpc.nlb,
     certId,
     domain,
     prefix: 'public', // Used to form DNS name: public.nod15c.com

@@ -30,7 +30,6 @@ def red(text):
 def dim(text):
   return Style.DIM + text + Style.NORMAL
 
-
 def bred(text):
   return Style.BRIGHT + Fore.RED + text + Fore.RESET + Style.NORMAL
 
@@ -38,21 +37,24 @@ def dump(ob):
   # Use YAML for raw output of dictionary
   print(yaml.safe_dump(ob, default_flow_style=False))
 
-
 def getStackOutputDict(stackName):
   print('Getting stack output for {}...'.format(stackName))
   stack = cloudformation.Stack(stackName)
   d = {}
   for out in stack.outputs or []:
     key = out['OutputKey']
-    d[key] = out['OutputValue']
+    d[key] = {
+      'val': out['OutputValue'],
+      'desc': out.get('Description'),
+      'exp': out.get('ExportName')
+    }
   return d
 
 def getStackNames():
   return [(s.stack_name, s.stack_status) for s in cloudformation.stacks.all()]
 
 
-def getStackInfo(stack_name):
+def getStackInfo(stack_name, simple=True):
   if not stack_name:
     print('Please specifiy a stack name')
     info = getStackNames()
@@ -61,7 +63,10 @@ def getStackInfo(stack_name):
       col = blue if status in active else dim
       print(col(name), dim(status))
     return
-  return getStackOutputDict(stack_name)
+  d = getStackOutputDict(stack_name)
+  if simple:
+    d = { k: v['val'] for (k,v) in d.items() }
+  return d
 
 @click.group()
 def stack():
@@ -83,12 +88,22 @@ def info(stack_name):
 
   """
 
-  si = getStackInfo(stack_name)
+  si = getStackInfo(stack_name, simple=False)
   if not si:
     return
 
-  print
-  dump(si)
+  print()
+
+  for (key, val) in si.items():
+    print('{}:'.format(bold(key)))
+    print('  {}'.format(green(val['val'])))
+    desc = val.get('desc')
+    exp = val.get('exp')
+    if desc:
+      print('  Description: {}'.format(desc))
+    if exp:
+      print('  Export: {}'.format(exp))
+    print()
 
 
 @click.command()

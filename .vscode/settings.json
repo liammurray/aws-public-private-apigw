@@ -1,3 +1,6 @@
 {
-  "eslint.workingDirectories": ["infra"]
+  "eslint.workingDirectories": ["infra", { "pattern": "funcs/*" }],
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.python"
+  }
 }

@@ -2,17 +2,25 @@ import * as cdk from '@aws-cdk/core'
 import * as ec2 from '@aws-cdk/aws-ec2'
 import * as logs from '@aws-cdk/aws-logs'
 import * as apigw from '@aws-cdk/aws-apigateway'
+import * as lambda from '@aws-cdk/aws-lambda'
 // import * as apigatewayv2 from '@aws-cdk/aws-apigatewayv2'
 import { getAllowVpcInvokePolicy } from '../apiGatewayUtils'
-import { cfnOutput, LambdaHelper } from '../utils'
+import { cfnOutput } from '../utils'
+import { LambdaHelper } from '../lambdaUtils'
 
-const lambdaHelper = new LambdaHelper('../../funcs')
+const lambdaHelper = new LambdaHelper({
+  basePath: '../../funcs',
+  runtime: lambda.Runtime.PYTHON_3_8,
+})
 
 export interface PrivateApiStackProps extends cdk.StackProps {
   readonly vpc: ec2.Vpc
   readonly endpoint: ec2.VpcEndpoint
 }
 
+/**
+ * Stack for demo Private API
+ */
 export default class PrivateApiStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, props: PrivateApiStackProps) {
     super(scope, id, props)
@@ -48,20 +56,68 @@ export default class PrivateApiStack extends cdk.Stack {
     })
 
     // v1 methods
-    this.addMethods(api.root.addResource('v1'))
+    this.addMethodsV1(api.root.addResource('v1'))
 
-    // Outputs (nice)
+    // Stand-alone lambda (not integrated with API but just added to stack)
+    lambdaHelper.addLambda(this, {
+      funcId: 'EchoFunc',
+      dir: 'echo',
+      export: true,
+      alias: 'live',
+      funcProps: {
+        handler: 'app.info.handler',
+      },
+    })
+
+    // Form usable API endpoint that goes through VPC endpoint
+    const prefix = `${api.restApiId}-${props.endpoint.vpcEndpointId}`
+    const apiVpceUrl = api.url.replace(api.restApiId, prefix)
+
     cfnOutput(this, 'ApiId', api.restApiId)
-    cfnOutput(this, 'ApiUrl', api.url)
+    cfnOutput(this, 'ApiUrl', api.url, false, {
+      description: 'The default API URL. Since it is private it is not accessible.',
+    })
+    cfnOutput(this, 'ApiVpceUrl', apiVpceUrl, true, {
+      description: 'The usable API URL that provides access via the VPC endpoint.',
+    })
   }
 
-  private addMethods(root: apigw.Resource) {
-    //const funcVer = new Date().toISOString(
-    const envVars = {}
+  private addMethodsV1(root: apigw.Resource) {
+    const { account, region } = cdk.Stack.of(this)
+
+    //const allowedCaller = `arn:aws:lambda:${region}:${account}:function:${downstreamFunc}`
 
     // GET v1/echo
-    const v1Echo = root.addResource('echo')
+    lambdaHelper.addMethod(this, root.resourceForPath('echo'), 'GET', {
+      funcId: 'ApiEchoFunc',
+      dir: 'echo',
+      // initialPolicy: [allowInvokePolicyStatement(downstreamFuncArn)],
+      funcProps: {
+        handler: 'app.info.handler',
+      },
+    })
 
-    lambdaHelper.addPyInt(this, v1Echo, 'GET', 'EchoFunc', 'echo', 'app.info.handler', envVars)
+    // function invokePolicyStatement(funcArn: string): iam.PolicyStatement {
+    //   return new iam.PolicyStatement({
+    //     resources: [funcArn],
+    //     actions: ['lambda:InvokeFunction'],
+    //   })
+    // }
+
+    // starts with arn:aws:lambda:us-west-2:958019638877:function:PrivateDemoPublicApi-
+
+    // POST v1/partner/message
+    lambdaHelper.addMethod(this, root.resourceForPath('partner/message'), 'POST', {
+      funcId: 'ApiPartnerMessageFunc',
+      dir: 'partner',
+      funcProps: {
+        runtime: lambda.Runtime.NODEJS_12_X,
+        handler: 'index.handler',
+        environment: {
+          // For logger
+          SERVICE_NAME: 'PrivateApi',
+        },
+      },
+    })
   }
 }

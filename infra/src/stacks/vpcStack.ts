@@ -16,7 +16,8 @@ import { cfnOutput } from '~/utils'
 // import { addCorsOptions } from './apiGatewayUtils'
 
 export interface VpcStackProps extends cdk.StackProps {
-  includeNlb?: boolean
+  includeNlb: boolean
+  cidr: string
 }
 
 //https://docs.aws.amazon.com/cdk/api/latest/docs/aws-s3-readme.html#sharing-buckets-between-stacks
@@ -32,10 +33,10 @@ export default class VpcStack extends cdk.Stack {
   public readonly vpcEndpoint: ec2.VpcEndpoint
   public readonly nlb: elbv2.NetworkLoadBalancer
 
-  constructor(scope: cdk.Construct, id: string, props?: VpcStackProps) {
+  constructor(scope: cdk.Construct, id: string, props: VpcStackProps) {
     super(scope, id, props)
 
-    const cidr = '10.1.0.0/16'
+    const cidr = props.cidr
 
     // Default VPC has public and private in each AZ (plus NAT and IGW)
     // With NAT:0 we get public and isolated privated subnets
@@ -46,7 +47,7 @@ export default class VpcStack extends cdk.Stack {
     })
 
     // EC2 for SSM
-    // Public so we can install dev tools
+    // Public so we can install dev tools (without NAT)
     const host = new ec2.BastionHostLinux(this, 'BastionHost', {
       vpc: this.vpc,
       subnetSelection: { subnetType: ec2.SubnetType.PUBLIC },
@@ -55,6 +56,7 @@ export default class VpcStack extends cdk.Stack {
     cfnOutput(this, 'BastionHostPrivateIp', host.instancePrivateIp)
 
     // Default is to add to one subnet per AZ (preferring private?)
+    // $0.01 per hour per endpoint per AZ (~$7.50 per month) plus a $0.01 fee per GB of data processed
     // Creates security group without rules
     // Attaching API will add from 10.1.0.0/16:443 to it (I think. Somebody does. Maybe based on servcie below.)
     // The endpoint itself gets a DNS name that can be used to address the private API (see endpoint in console).
@@ -64,10 +66,10 @@ export default class VpcStack extends cdk.Stack {
       // Allow all VPC traffic to endpoint
       open: true,
     })
-    cfnOutput(this, 'VpcEnpointId', this.vpcEndpoint.vpcEndpointId)
+    cfnOutput(this, 'VpcEndpointId', this.vpcEndpoint.vpcEndpointId)
 
-    if (props?.includeNlb) {
-      this.nlb = new elbv2.NetworkLoadBalancer(this, 'Nlb', {
+    if (props.includeNlb) {
+      this.nlb = new elbv2.NetworkLoadBalancer(this, 'NLB', {
         vpc: this.vpc,
       })
       cfnOutput(this, 'NlbArn', this.nlb.loadBalancerArn)
