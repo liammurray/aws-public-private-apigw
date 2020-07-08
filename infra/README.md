@@ -25,9 +25,32 @@ Fn.importValue('PrivateDemoPrivateApi:EchoFuncAliasLive')
 
 ## Build lambdas
 
+Install dev requirements (at root of project) for tools like pytest, etc.
+
+```bash
+mkvirtualenv private_api -p $(which python3)
+workon private_api
+pip install requirements.txt
+```
+
+If you ever add more deps:
+
+```bash
+pip freeze --exclude-editable -l > requirements.txt
+```
+
+Build lambdas (python and node)
+
 ```bash
 cd ../funcs
 make clean lambda
+```
+
+Test
+
+```bash
+cd ../funcs/<proj>
+make itest
 ```
 
 ## VPC
@@ -73,4 +96,13 @@ https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-private-
 
 ```bash
 npm run cdk deploy PrivateDemoPublicApi
+```
+
+### Test Public API
+
+```bash
+# Call endpoint that hits private API via lambda connected to isolated subnet
+curl https://3aso80og16.execute-api.us-west-2.amazonaws.com/active/v1/echo/api
+# Call endpoint that invokes lambda
+curl https://3aso80og16.execute-api.us-west-2.amazonaws.com/active/v1/echo/lambda
 ```
