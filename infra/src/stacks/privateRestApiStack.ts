@@ -3,7 +3,7 @@ import * as ec2 from '@aws-cdk/aws-ec2'
 import * as logs from '@aws-cdk/aws-logs'
 import * as apigw from '@aws-cdk/aws-apigateway'
 import * as lambda from '@aws-cdk/aws-lambda'
-// import * as apigatewayv2 from '@aws-cdk/aws-apigatewayv2'
+
 import { getAllowVpcInvokePolicy } from '../apiGatewayUtils'
 import { cfnOutput } from '../utils'
 import { LambdaHelper } from '../lambdaUtils'
@@ -13,7 +13,7 @@ const lambdaHelper = new LambdaHelper({
   runtime: lambda.Runtime.PYTHON_3_8,
 })
 
-export interface PrivateApiStackProps extends cdk.StackProps {
+export interface PrivateRestApiStackProps extends cdk.StackProps {
   readonly vpc: ec2.Vpc
   readonly endpoint: ec2.VpcEndpoint
 }
@@ -22,21 +22,17 @@ export interface PrivateApiStackProps extends cdk.StackProps {
  * Stack for demo Private API
  */
 export default class PrivateApiStack extends cdk.Stack {
-  constructor(scope: cdk.Construct, id: string, props: PrivateApiStackProps) {
+  constructor(scope: cdk.Construct, id: string, props: PrivateRestApiStackProps) {
     super(scope, id, props)
 
     /**
-     * Private API Gateway
-     *
-     * https://docs.aws.amazon.com/apigateway/latest/developerguide/getting-started-with-private-integration.html
-     *
-     * Associating with vpc endpoint generates new route 53 alias for you
-     * https://{rest-api-id}-{vpce-id}.execute-api.{region}.amazonaws.com/{stage}
+     * Private REST API
      */
-    const apiLogGroup = new logs.LogGroup(this, 'PrivateApiLogs')
-    const api = new apigw.RestApi(this, 'PrivateApi', {
-      restApiName: 'Private API Service',
-      description: 'Private API',
+    const apiLogGroup = new logs.LogGroup(this, 'PrivateRestApiLogs')
+    const api = new apigw.RestApi(this, 'PrivateRestApi', {
+      restApiName: 'Private REST API',
+      description: 'Private REST API Demo',
+      // Generates Route53: https://{rest-api-id}-{vpce-id}.execute-api.{region}.amazonaws.com/{stage}
       endpointConfiguration: {
         types: [apigw.EndpointType.PRIVATE],
         vpcEndpoints: [props.endpoint],
@@ -58,9 +54,9 @@ export default class PrivateApiStack extends cdk.Stack {
     // v1 methods
     this.addMethodsV1(api.root.addResource('v1'))
 
-    // Stand-alone lambda (not integrated with API but just added to stack)
+    // Stand-alone lambda (not integrated with API but just added to stack for convenience)
     lambdaHelper.addLambda(this, {
-      funcId: 'EchoFunc',
+      funcId: 'EchoFuncStandAlone',
       dir: 'echo',
       export: true,
       alias: 'live',
@@ -68,6 +64,26 @@ export default class PrivateApiStack extends cdk.Stack {
         handler: 'app.info.handler',
       },
     })
+
+    // Adds invoke f2 permission to f1
+    // f2.grantInvoke(f1)
+
+    // const { account, region } = cdk.Stack.of(this)
+
+    // Lambdas part of public API have stack prefix (would include env for env-specific API)
+    // const allowdPrefix = 'PublicPrivateApiDemo'
+    // const allowedCaller = `arn:aws:lambda:${region}:${account}:function:${allowdPrefix}-`
+    // const policyOpts = {
+    //   conditions: {
+    //     'arn:like': {
+    //       'aws:SourceArn': allowedCaller,
+    //     },
+    //   },
+    // }
+
+    // const allowCallerPolicy = new iam.PolicyStatement({
+    //   actions: ['lambda:InvokeFunction'],
+    // })
 
     // Form usable API endpoint that goes through VPC endpoint
     const prefix = `${api.restApiId}-${props.endpoint.vpcEndpointId}`
@@ -83,10 +99,6 @@ export default class PrivateApiStack extends cdk.Stack {
   }
 
   private addMethodsV1(root: apigw.Resource) {
-    const { account, region } = cdk.Stack.of(this)
-
-    //const allowedCaller = `arn:aws:lambda:${region}:${account}:function:${downstreamFunc}`
-
     // GET v1/echo
     lambdaHelper.addMethod(this, root.resourceForPath('echo'), 'GET', {
       funcId: 'ApiEchoFunc',
@@ -96,15 +108,6 @@ export default class PrivateApiStack extends cdk.Stack {
         handler: 'app.info.handler',
       },
     })
-
-    // function invokePolicyStatement(funcArn: string): iam.PolicyStatement {
-    //   return new iam.PolicyStatement({
-    //     resources: [funcArn],
-    //     actions: ['lambda:InvokeFunction'],
-    //   })
-    // }
-
-    // starts with arn:aws:lambda:us-west-2:958019638877:function:PrivateDemoPublicApi-
 
     // POST v1/partner/message
     lambdaHelper.addMethod(this, root.resourceForPath('partner/message'), 'POST', {

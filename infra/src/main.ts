@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import 'source-map-support/register'
 import * as cdk from '@aws-cdk/core'
-import PrivateApiStack from './stacks/privateApiStack'
-import PublicApiStack from './stacks/publicApiStack'
+import PrivateApiStack from './stacks/privateRestApiStack'
+import PublicRestApiStack from './stacks/publicRestApiStack'
 import VpcStack from './stacks/vpcStack'
 
 import { getStringParams, getCallerAccount } from './awsUtils'
@@ -33,20 +33,20 @@ getCallerAccount().then(async account => {
   const vpc = new VpcStack(app, 'PrivateDemoVpc', {
     env,
     cidr: '10.1.0.0/16',
-    includeNlb: true,
   })
+
   new PrivateApiStack(app, 'PrivateDemoPrivateApi', {
     env,
     vpc: vpc.vpc,
     endpoint: vpc.vpcEndpoint,
   })
 
-  new PublicApiStack(app, 'PrivateDemoPublicApi', {
+  new PublicRestApiStack(app, 'PrivateDemoPublicApi', {
     env,
     vpc: vpc.vpc,
-    nlb: vpc.nlb,
     certId,
     domain,
-    prefix: 'public', // Used to form DNS name: public.nod15c.com
+    // Used to form DNS name: public.nod15c.com
+    prefix: 'public',
   })
 })

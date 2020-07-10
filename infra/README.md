@@ -65,13 +65,13 @@ At this point you can try to connect to the bastion over SSM (see outputs for `B
 ../stack.py info PrivateDemoVpc
 ```
 
-## Private API
+## Private REST API
 
 ```bash
-npm run cdk deploy PrivateDemoPrivateApi
+npm run cdk deploy PrivateDemoPrivateRestApi
 ```
 
-### Test Private API
+### Test Private REST API
 
 In outputs you will see the private API URL (named `ApiVpceUrl`). This is a special form of the API URL that routes via the VPC endpoint. (It Assumes private DNS is disabled.)
 
@@ -81,7 +81,7 @@ curl -kv https://zzbbsbcjae-vpce-05a4df99f02d32c02.execute-api.us-west-2.amazona
 curl -X POST  https://zzbbsbcjae-vpce-05a4df99f02d32c02.execute-api.us-west-2.amazonaws.com/active/v1/partner/message
 ```
 
-### Troubleshoot Private API
+### Troubleshoot Private REST API
 
 Resource policy should allow "execute-api:Invoke" from source VPC (attached to endpoint) for any principal
 
@@ -92,17 +92,38 @@ This means you don't need to pass API ID in host header.
 
 https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-private-apis.html#associate-private-api-with-vpc-endpoint
 
-## Public API
+## Public REST API
 
 ```bash
-npm run cdk deploy PrivateDemoPublicApi
+npm run cdk deploy PrivateDemoPublicRestApi
 ```
 
-### Test Public API
+### Test Public REST API
 
 ```bash
 # Call endpoint that hits private API via lambda connected to isolated subnet
 curl https://3aso80og16.execute-api.us-west-2.amazonaws.com/active/v1/echo/api
 # Call endpoint that invokes lambda
 curl https://3aso80og16.execute-api.us-west-2.amazonaws.com/active/v1/echo/lambda
+```
+
+Or use nicer domain name
+
+```bash
+curl https://public.nod15c.com/v1/echo/lambda
+curl https://public.nod15c.com/v1/echo/api
+# Proxied API
+curl -s  https://public.nod15c.com/cats/facts | jq
+```
+
+## Cleanup
+
+Delete stacks in reverse order since they have Fn.Import dependencies.
+
+You can also go the AWS console and delete the stacks there.
+
+```bash
+npm run cdk destroy PrivateDemoPublicRestApi
+npm run cdk destroy PrivateDemoPrivateRestApi
+npm run cdk destroy PrivateDemoVpc
 ```

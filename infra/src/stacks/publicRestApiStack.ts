@@ -5,7 +5,6 @@ import * as iam from '@aws-cdk/aws-iam'
 import * as logs from '@aws-cdk/aws-logs'
 import * as route53 from '@aws-cdk/aws-route53'
 import * as certman from '@aws-cdk/aws-certificatemanager'
-import * as elbv2 from '@aws-cdk/aws-elasticloadbalancingv2'
 import * as lambda from '@aws-cdk/aws-lambda'
 import { Fn } from '@aws-cdk/core'
 import { cfnOutput } from '../utils'
@@ -26,7 +25,6 @@ export interface PublicApiStackProps extends cdk.StackProps {
   // Required for route53 hosted zone lookup (can't use environment generic stack)
   readonly env: cdk.Environment
   readonly vpc: ec2.Vpc
-  readonly nlb?: elbv2.NetworkLoadBalancer
   // Regional cert
   readonly certId: string
   // nod15c.com
@@ -38,7 +36,7 @@ export interface PublicApiStackProps extends cdk.StackProps {
 /**
  * Stack for demo Private API
  */
-export default class PublicApiStack extends cdk.Stack {
+export default class PublicRestApiStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, private readonly props: PublicApiStackProps) {
     super(scope, id, props)
 
@@ -49,24 +47,15 @@ export default class PublicApiStack extends cdk.Stack {
 
     const dnsName = `${props.prefix}.${props.domain}`
 
-    // const integration = new apigw.Integration({
-    //   type: apigw.IntegrationType.HTTP_PROXY,
-    //   options: {
-    //     connectionType: apigw.ConnectionType.VPC_LINK,
-    //     vpcLink: link,
-    //   },
-    // })
-
     /**
-     * Private API Gateway
+     * Public REST API
      *
-     * Associating with vpc endpoint generates new route 53 alias for you
-     * https://{rest-api-id}-{vpce-id}.execute-api.{region}.amazonaws.com/{stage}
+     * The domain name creates a domain with a root (/) base path mapping to https:<api>/{stage}
      */
-    const apiLogGroup = new logs.LogGroup(this, 'PublicApiLogs')
-    const api = new apigw.RestApi(this, 'PublicApi', {
-      restApiName: 'Public Service',
-      description: 'Public API with VpcLink',
+    const apiLogGroup = new logs.LogGroup(this, 'PublicRestApiLogs')
+    const api = new apigw.RestApi(this, 'PublicRestApi', {
+      restApiName: 'Public REST API',
+      description: 'Public REST API Demo',
       endpointConfiguration: {
         types: [apigw.EndpointType.REGIONAL],
       },
@@ -89,21 +78,50 @@ export default class PublicApiStack extends cdk.Stack {
       },
     })
 
-    // const link = new apigw.VpcLink(this, 'link', {
-    //   targets: [this.props.nlb],
-    // })
-
-    // const integration = new apigw.Integration({
-    //   type: apigw.IntegrationType.HTTP_PROXY,
-    //   integrationHttpMethod: 'ANY',
-    //   options: {
-    //     connectionType: apigw.ConnectionType.VPC_LINK,
-    //     vpcLink: link,
-    //   },
-    // })
-
     // v1 methods
     this.addMethodsV1(props.vpc, api.root.addResource('v1'))
+
+    // Explicit /xealth/staging/echo calls lambda (bypass greedy proxy path)
+    const downstreamFunc = Fn.importValue('PrivateDemoPrivateApi:EchoFuncAliasLive')
+    const downstreamFuncArn = `arn:aws:lambda:${region}:${account}:function:${downstreamFunc}`
+    lambdaHelper.addMethod(this, api.root.resourceForPath('xealth/staging/echo'), 'GET', {
+      funcId: 'CallEchoLambaFuncUnderX',
+      dir: 'proxy',
+      funcProps: {
+        handler: 'app.proxy.callLambda',
+        initialPolicy: [invokePolicyStatement(downstreamFuncArn)],
+        environment: {
+          // my-function:v1 (with/without version/alias) or ARN
+          DOWNSTREAM_FUNCTION_NAME: downstreamFunc,
+        },
+      },
+    })
+
+    ////
+    //
+    // /cats/<*>
+    //
+    //  /facts
+    //  /users
+    //
+    const catFacts = 'https://cat-fact.herokuapp.com'
+    api.root.resourceForPath('cats').addProxy({
+      defaultMethodOptions: {
+        requestParameters: {
+          // Don't cache responses
+          'method.request.path.proxy': false,
+        },
+      },
+      defaultIntegration: new apigw.HttpIntegration(`${catFacts}/{proxy}`, {
+        httpMethod: 'ANY',
+        proxy: true,
+        options: {
+          requestParameters: {
+            'integration.request.path.proxy': 'method.request.path.proxy',
+          },
+        },
+      }),
+    })
 
     const rec = this.addRoute53(dnsName, api)
 
@@ -114,8 +132,6 @@ export default class PublicApiStack extends cdk.Stack {
   }
 
   private addMethodsV1(vpc: ec2.Vpc, root: apigw.Resource) {
-    // item.addMethod('DELETE', new apigateway.HttpIntegration('http://amazon.com'));
-
     const { account, region } = cdk.Stack.of(this)
 
     // GET v1/echo/lambda
@@ -186,15 +202,3 @@ export default class PublicApiStack extends cdk.Stack {
     })
   }
 }
-
-// TODO allow user to invoke any lambda with tag service=foo
-//
-// iamUser.attachInlinePolicy(new iam.Policy(this, 'AllowBooks', {
-//   statements: [
-//     new iam.PolicyStatement({
-//       actions: [ 'execute-api:Invoke' ],
-//       effect: iam.Effect.Allow,
-//       resources: [ getBooks.methodArn() ]
-//     })
-//   ]
-// })
