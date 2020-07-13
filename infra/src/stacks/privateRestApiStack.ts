@@ -3,6 +3,7 @@ import * as ec2 from '@aws-cdk/aws-ec2'
 import * as logs from '@aws-cdk/aws-logs'
 import * as apigw from '@aws-cdk/aws-apigateway'
 import * as lambda from '@aws-cdk/aws-lambda'
+import * as route53 from '@aws-cdk/aws-route53'
 
 import { getAllowVpcInvokePolicy } from '../apiGatewayUtils'
 import { cfnOutput } from '../utils'

@@ -33,20 +33,20 @@ getCallerAccount().then(async account => {
   const vpc = new VpcStack(app, 'PrivateDemoVpc', {
     env,
     cidr: '10.1.0.0/16',
+    // privateZone: `internal.${domain}`,
   })
 
   new PrivateApiStack(app, 'PrivateDemoPrivateApi', {
     env,
     vpc: vpc.vpc,
     endpoint: vpc.vpcEndpoint,
+    // dnsAlias: `private.${domain}`, <== custom domain not supporte for private API
   })
 
   new PublicRestApiStack(app, 'PrivateDemoPublicApi', {
     env,
     vpc: vpc.vpc,
     certId,
-    domain,
-    // Used to form DNS name: public.nod15c.com
-    prefix: 'public',
+    dnsAlias: `public.${domain}`,
   })
 })

@@ -27,10 +27,8 @@ export interface PublicApiStackProps extends cdk.StackProps {
   readonly vpc: ec2.Vpc
   // Regional cert
   readonly certId: string
-  // nod15c.com
-  readonly domain: string
-  // public for public.nod15c.com
-  readonly prefix: string
+  // public.nod15c.com
+  readonly dnsAlias: string
 }
 
 /**
@@ -44,8 +42,6 @@ export default class PublicRestApiStack extends cdk.Stack {
 
     const regionCertArn = `arn:aws:acm:${region}:${account}:certificate/${props.certId}`
     const certificate = certman.Certificate.fromCertificateArn(this, 'cert', regionCertArn)
-
-    const dnsName = `${props.prefix}.${props.domain}`
 
     /**
      * Public REST API
@@ -62,7 +58,7 @@ export default class PublicRestApiStack extends cdk.Stack {
       domainName: {
         certificate,
         // public.nod15c.com
-        domainName: dnsName,
+        domainName: props.dnsAlias,
         endpointType: apigw.EndpointType.REGIONAL,
       },
       defaultCorsPreflightOptions: {
@@ -123,7 +119,7 @@ export default class PublicRestApiStack extends cdk.Stack {
       }),
     })
 
-    const rec = this.addRoute53(dnsName, api)
+    const rec = this.addRoute53(props.dnsAlias, api)
 
     // Outputs (nice)
     cfnOutput(this, 'ApiId', api.restApiId)
@@ -167,6 +163,7 @@ export default class PublicRestApiStack extends cdk.Stack {
     //   Attached to VPC isolated subnet
     //   Call private API endpoint
     //
+    // https://stackoverflow.com/questions/39352648/access-aws-api-gateway-with-iam-roles-from-python
     lambdaHelper.addMethod(this, root.resourceForPath('echo/api'), 'GET', {
       funcId: 'CallEchoApiFunc',
       dir: 'proxy',

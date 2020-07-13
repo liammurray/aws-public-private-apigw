@@ -112,7 +112,7 @@ def private(stack_name):
   siVpc = getStackInfo('PrivateDemoVpc')
   siPrivateApi = getStackInfo('PrivateDemoPrivateApi')
 
-  vpceId=siVpc['VpcEnpointId']
+  vpceId=siVpc['VpcEndpointId']
   apiId=siPrivateApi['ApiId']
   # URL for private API (not visible from VPC)
   apiUrl=siPrivateApi['ApiUrl']
