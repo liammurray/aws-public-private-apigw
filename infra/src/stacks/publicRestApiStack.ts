@@ -49,9 +49,13 @@ export default class PublicRestApiStack extends cdk.Stack {
      * The domain name creates a domain with a root (/) base path mapping to https:<api>/{stage}
      */
     const apiLogGroup = new logs.LogGroup(this, 'PublicRestApiLogs')
+
+    const policyDoc = new iam.PolicyDocument()
+
     const api = new apigw.RestApi(this, 'PublicRestApi', {
       restApiName: 'Public REST API',
       description: 'Public REST API Demo',
+      //policy: policyDoc,
       endpointConfiguration: {
         types: [apigw.EndpointType.REGIONAL],
       },
@@ -74,13 +78,48 @@ export default class PublicRestApiStack extends cdk.Stack {
       },
     })
 
-    // v1 methods
-    this.addMethodsV1(props.vpc, api.root.addResource('v1'))
+    //policyDoc.addStatements()
 
-    // Explicit /xealth/staging/echo calls lambda (bypass greedy proxy path)
+    const fullAccessGroup = new iam.Group(this, 'PublicApiFullAccessGroup', {})
+    const invokeAllStatement = new iam.PolicyStatement({
+      actions: ['execute-api:Invoke'],
+      effect: iam.Effect.ALLOW,
+      // arn:aws:execute-api:us-west-2:958019638877:r8uy55b6kf/*/*/*
+      resources: [api.arnForExecuteApi()],
+    })
+    new iam.Policy(this, 'PulicApiFullAccessPolicy', {
+      groups: [fullAccessGroup],
+      statements: [invokeAllStatement],
+    })
+    cfnOutput(this, 'ApiFullAccessGroup', fullAccessGroup.groupName)
+
+    // v1 methods
+    this.addMethodsV1(api, props.vpc, api.root.addResource('v1'))
+
+    // Mostly for {proxy+} paths to external http integration
+    this.addMethodsNonVersioned(api.root)
+
+    const rec = this.addRoute53(props.dnsAlias, api)
+
+    // Outputs (nice)
+    cfnOutput(this, 'ApiId', api.restApiId)
+    cfnOutput(this, 'ApiUrl', api.url)
+    cfnOutput(this, 'DomainName', rec.domainName)
+  }
+
+  private addMethodsNonVersioned(root: apigw.IResource) {
+    const { account, region } = cdk.Stack.of(this)
+
+    //
+    // Pass through methods (outside v1)
+    //
+    // Explicit path override:
+    //
+    //   /cats/echo -> calls lambda (bypass greedy proxy path under /cats/{proxy+} below
+    //
     const downstreamFunc = Fn.importValue('PrivateDemoPrivateApi:EchoFuncAliasLive')
     const downstreamFuncArn = `arn:aws:lambda:${region}:${account}:function:${downstreamFunc}`
-    lambdaHelper.addMethod(this, api.root.resourceForPath('xealth/staging/echo'), 'GET', {
+    lambdaHelper.addMethod(this, root.resourceForPath('cats/echo'), 'GET', {
       funcId: 'CallEchoLambaFuncUnderX',
       dir: 'proxy',
       funcProps: {
@@ -95,13 +134,15 @@ export default class PublicRestApiStack extends cdk.Stack {
 
     ////
     //
-    // /cats/<*>
+    // /cats/{proxy +}
     //
-    //  /facts
-    //  /users
+    // Examples:
+    //
+    //  /cats/facts
+    //  /cats/users
     //
     const catFacts = 'https://cat-fact.herokuapp.com'
-    api.root.resourceForPath('cats').addProxy({
+    root.resourceForPath('cats').addProxy({
       defaultMethodOptions: {
         requestParameters: {
           // Don't cache responses
@@ -118,16 +159,9 @@ export default class PublicRestApiStack extends cdk.Stack {
         },
       }),
     })
-
-    const rec = this.addRoute53(props.dnsAlias, api)
-
-    // Outputs (nice)
-    cfnOutput(this, 'ApiId', api.restApiId)
-    cfnOutput(this, 'ApiUrl', api.url)
-    cfnOutput(this, 'DomainName', rec.domainName)
   }
 
-  private addMethodsV1(vpc: ec2.Vpc, root: apigw.Resource) {
+  private addMethodsV1(api: apigw.RestApi, vpc: ec2.Vpc, root: apigw.Resource) {
     const { account, region } = cdk.Stack.of(this)
 
     // GET v1/echo/lambda
@@ -177,6 +211,44 @@ export default class PublicRestApiStack extends cdk.Stack {
         },
       },
     })
+
+    // GET v1/echo/iam
+    //
+    //  Invokes echo lambda directly. Protected with identity-based IAM policy allowing invoke.
+    //
+    // To test:
+    //
+    // brew install awscurl
+    // awscurl --region us-west-2 --profile <profile> --service execute-api https://public.nod15c.com/v1/echo/iam
+    //
+    // Profile should have full access to invoke
+    //
+    lambdaHelper.addMethod(
+      this,
+      root.resourceForPath('echo/iam'),
+      'GET',
+      {
+        funcId: 'ApiEchoFuncIam',
+        dir: 'echo',
+        // initialPolicy: [allowInvokePolicyStatement(downstreamFuncArn)],
+        funcProps: {
+          handler: 'app.info.handler',
+        },
+      },
+      {
+        methodProps: { authorizationType: apigw.AuthorizationType.IAM },
+      }
+    )
+    // Add identity-based IAM policy allowing invoke
+    // iamUser.attachInlinePolicy(new iam.Policy(this, 'AllowBooks', {
+    //     statements: [
+    //       new iam.PolicyStatement({
+    //         actions: [ 'execute-api:Invoke' ],
+    //         effect: iam.Effect.Allow,
+    //         resources: [ getBooks.methodArn() ]
+    //       })
+    //     ]
+    //   }))
   }
 
   private addRoute53(dnsName: string, api: apigw.RestApi) {

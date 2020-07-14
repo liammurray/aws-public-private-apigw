@@ -27,7 +27,7 @@ export type EnvMap = {
 
 type Optional<T, K extends keyof T> = Omit<T, K> & Partial<T>
 
-export type AddProps = {
+export type AddLambdaProps = {
   // Foo
   funcId: string
   // Relative to code asset root, e.g. 'foo'
@@ -37,6 +37,15 @@ export type AddProps = {
   // Add alias to current version
   alias?: string
   funcProps: Optional<lambda.FunctionProps, 'code' | 'runtime'>
+}
+
+export type AddMethodProps = {
+  methodProps?: apigw.MethodOptions
+}
+
+export type AddMethodResponse = {
+  func: lambda.Function
+  method: apigw.Method
 }
 
 export type FuncOpts = {
@@ -65,7 +74,7 @@ export class LambdaHelper {
   /**
    * Adds lambda to stack. Can be used stand-alone or for API integration.
    */
-  addLambda(scope: cdk.Construct, props: AddProps): lambda.Function {
+  addLambda(scope: cdk.Construct, props: AddLambdaProps): lambda.Function {
     const { funcId, dir, funcProps } = props
 
     let extraOpts: lambda.FunctionOptions | undefined
@@ -108,11 +117,16 @@ export class LambdaHelper {
   addMethod(
     scope: cdk.Construct,
     res: apigw.Resource,
-    method: string,
-    props: AddProps
-  ): lambda.Function {
+    verb: string,
+    props: AddLambdaProps,
+    addMethodProps?: AddMethodProps
+  ): AddMethodResponse {
     const func = this.addLambda(scope, props)
-    res.addMethod(method, new apigw.LambdaIntegration(func))
-    return func
+    const method = res.addMethod(
+      verb,
+      new apigw.LambdaIntegration(func),
+      addMethodProps?.methodProps
+    )
+    return { func, method }
   }
 }
