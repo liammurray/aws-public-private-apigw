@@ -41,7 +41,7 @@ rules:
         requireLast: false
       singleline:
         delimiter: comma
-        requireLast: true
+        requireLast: false
   '@typescript-eslint/no-this-alias':
     - error
     - allowDestructuring: true

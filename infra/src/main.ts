@@ -18,35 +18,41 @@ const app = new cdk.App()
 //   return val
 // }
 
-getCallerAccount().then(async account => {
-  const env = {
-    account,
-    region: process.env.AWS_REGION || 'us-west-2',
-  }
+getCallerAccount()
+  .then(async account => {
+    const env = {
+      account,
+      region: process.env.AWS_REGION || 'us-west-2',
+    }
 
-  // Get external env from SSM (also could use context or imports)
-  const [certId, domain] = await getStringParams(
-    '/cicd/common/certs/us-west-2',
-    '/cicd/common/domain'
-  )
+    // Get external env from SSM (also could use context or imports)
+    const [certId, domain] = await getStringParams(
+      '/cicd/common/certs/us-west-2',
+      '/cicd/common/domain'
+    )
 
-  const vpc = new VpcStack(app, 'PrivateDemoVpc', {
-    env,
-    cidr: '10.1.0.0/16',
-    // privateZone: `internal.${domain}`,
+    const vpc = new VpcStack(app, 'PrivateDemoVpc', {
+      env,
+      cidr: '10.1.0.0/16',
+      // privateZone: `internal.${domain}`,
+    })
+
+    new PrivateApiStack(app, 'PrivateDemoPrivateApi', {
+      env,
+      vpc: vpc.vpc,
+      endpoint: vpc.vpcEndpoint,
+      // dnsAlias: `private.${domain}`, <== custom domain not supporte for private API
+    })
+
+    new PublicRestApiStack(app, 'PrivateDemoPublicApi', {
+      env,
+      vpc: vpc.vpc,
+      certId,
+      dnsAlias: `public.${domain}`,
+    })
   })
-
-  new PrivateApiStack(app, 'PrivateDemoPrivateApi', {
-    env,
-    vpc: vpc.vpc,
-    endpoint: vpc.vpcEndpoint,
-    // dnsAlias: `private.${domain}`, <== custom domain not supporte for private API
+  .catch(err => {
+    console.log('Whoops:')
+    console.error(err)
+    process.exit(1)
   })
-
-  new PublicRestApiStack(app, 'PrivateDemoPublicApi', {
-    env,
-    vpc: vpc.vpc,
-    certId,
-    dnsAlias: `public.${domain}`,
-  })
-})

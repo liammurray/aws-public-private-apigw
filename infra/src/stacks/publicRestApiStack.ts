@@ -9,6 +9,7 @@ import * as lambda from '@aws-cdk/aws-lambda'
 import { Fn } from '@aws-cdk/core'
 import { cfnOutput } from '../utils'
 import { LambdaHelper } from '../lambdaUtils'
+import { Pricing } from 'aws-sdk'
 
 function invokePolicyStatement(funcArn: string): iam.PolicyStatement {
   return new iam.PolicyStatement({
@@ -21,6 +22,53 @@ const lambdaHelper = new LambdaHelper({
   basePath: '../../funcs',
   runtime: lambda.Runtime.PYTHON_3_8,
 })
+
+type StrStrMap = { [key: string]: string }
+
+/**
+ * Returns policy document that allows invoke if "Team" tag (on principal) matches
+ */
+function getStatementsAllowInvokeTagBased(tags: StrStrMap): iam.PolicyStatement[] {
+  // See: https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-resource-policies-examples.html
+  //  Using api.arnForExecuteApi() creates circular dependency error
+  //  The resources is fixed
+  const out = []
+
+  const eqs: StrStrMap = {}
+  for (const [tag, value] of Object.entries(tags)) {
+    // ResourceTag does not work--not available for "invoke" action
+    // eqs[`aws:ResourceTag/${tag}`] = '${' + `aws:PrincipalTag/${tag}` + '}'
+    eqs[`aws:PrincipalTag/${tag}`] = value
+  }
+
+  out.push(
+    new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['execute-api:Invoke', 'execute-api:InvalidateCache'],
+      // resources: [api.arnForExecuteApi()],
+      resources: ['execute-api:/*'],
+      conditions: {
+        StringEquals: eqs,
+      },
+      principals: [new iam.AnyPrincipal()],
+    })
+  )
+  // out.push(
+  //   new iam.PolicyStatement({
+  //     effect: iam.Effect.DENY,
+  //     actions: ['execute-api:Invoke'],
+  //     resources: ['execute-api:/*'],
+  //     conditions: {
+  //       Null: {
+  //         'aws:RequestTag/Team': true,
+  //       },
+  //     },
+  //     principals: [new iam.AnyPrincipal()],
+  //   })
+  // )
+  return out
+}
+
 export interface PublicApiStackProps extends cdk.StackProps {
   // Required for route53 hosted zone lookup (can't use environment generic stack)
   readonly env: cdk.Environment
@@ -50,15 +98,15 @@ export default class PublicRestApiStack extends cdk.Stack {
      */
     const apiLogGroup = new logs.LogGroup(this, 'PublicRestApiLogs')
 
-    const policyDoc = new iam.PolicyDocument()
-
     const api = new apigw.RestApi(this, 'PublicRestApi', {
       restApiName: 'Public REST API',
       description: 'Public REST API Demo',
-      //policy: policyDoc,
       endpointConfiguration: {
         types: [apigw.EndpointType.REGIONAL],
       },
+      policy: new iam.PolicyDocument({
+        statements: getStatementsAllowInvokeTagBased({ Team: 'demo' }),
+      }),
       domainName: {
         certificate,
         // public.nod15c.com
@@ -78,20 +126,27 @@ export default class PublicRestApiStack extends cdk.Stack {
       },
     })
 
-    //policyDoc.addStatements()
+    // Resource tags be used for controlling access for apigateway actions but not execute-api
+    cdk.Tag.add(api, 'ServiceType', 'demo')
+    cfnOutput(this, 'ApiId', api.restApiId)
+    cfnOutput(this, 'ApiUrl', api.url)
 
-    const fullAccessGroup = new iam.Group(this, 'PublicApiFullAccessGroup', {})
-    const invokeAllStatement = new iam.PolicyStatement({
-      actions: ['execute-api:Invoke'],
-      effect: iam.Effect.ALLOW,
-      // arn:aws:execute-api:us-west-2:958019638877:r8uy55b6kf/*/*/*
-      resources: [api.arnForExecuteApi()],
-    })
-    new iam.Policy(this, 'PulicApiFullAccessPolicy', {
-      groups: [fullAccessGroup],
-      statements: [invokeAllStatement],
-    })
-    cfnOutput(this, 'ApiFullAccessGroup', fullAccessGroup.groupName)
+    // https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-control-access-using-iam-policies-to-invoke-api.html
+    // https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-iam-policy-examples-for-api-execution.html
+
+    // Our customer managed policies (can be attached to multiple roles)
+    const invokeDemoApisPolicy = this.createInvokeDemoApisPolicy()
+    const invokeThisApiPolicy = this.createInvokeThisApiPolicy(api)
+
+    this.createFullAccessGroup(api)
+    this.createTeamRole(invokeDemoApisPolicy, 'PublicDemoRoleTeamDemo', 'demo')
+    this.createTeamRole(invokeDemoApisPolicy, 'PublicDemoRoleTeamDevs', 'devs')
+    this.createTeamRole(invokeDemoApisPolicy, 'PublicDemoRoleTeamDemoVanilla', 'demo', false)
+    this.createTeamRole(invokeDemoApisPolicy, 'PublicDemoRoleTeamDevsVanilla', 'devs', false)
+    this.createDemoRoleAllAccess(invokeThisApiPolicy, 'PublicDemoRoleGeneric')
+    this.createDemoRole3()
+
+    // v1/echo/lambda
 
     // v1 methods
     this.addMethodsV1(api, props.vpc, api.root.addResource('v1'))
@@ -102,9 +157,128 @@ export default class PublicRestApiStack extends cdk.Stack {
     const rec = this.addRoute53(props.dnsAlias, api)
 
     // Outputs (nice)
-    cfnOutput(this, 'ApiId', api.restApiId)
-    cfnOutput(this, 'ApiUrl', api.url)
+
     cfnOutput(this, 'DomainName', rec.domainName)
+  }
+
+  /**
+   * Attach to role (or user or group).
+   */
+  private createInvokeDemoApisPolicy(): iam.Policy {
+    const { account, region } = cdk.Stack.of(this)
+
+    return new iam.Policy(this, 'InvokeDemoApis', {
+      policyName: 'InvokeDemoApisPolicy',
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['execute-api:Invoke', 'execute-api:InvalidateCache'],
+          resources: [`arn:aws:execute-api:${region}:${account}:*`],
+          conditions: {
+            StringEquals: {
+              // Can't use ResourceTag for Invoke action
+              // 'aws:ResourceTag/Team': 'demo',
+              'aws:PrincipalTag/Team': 'demo',
+            },
+          },
+        }),
+      ],
+    })
+  }
+
+  private createInvokeThisApiPolicy(api: apigw.RestApi): iam.Policy {
+    //const { account, region } = cdk.Stack.of(this)
+    return new iam.Policy(this, 'InvokePublicDemoApis', {
+      policyName: 'InvokePublicDemoApiPolicy',
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['execute-api:Invoke', 'execute-api:InvalidateCache'],
+          resources: [api.arnForExecuteApi()],
+        }),
+      ],
+    })
+  }
+
+  private createTeamRole(
+    invokeDemoApisPolicy: iam.Policy,
+    roleName: string,
+    teamName: string,
+    attachPolicy = true
+  ): iam.Role {
+    const role = new iam.Role(this, roleName, {
+      roleName,
+      assumedBy: new iam.AccountRootPrincipal(),
+      description: `Role tagged Team ${teamName} for PublicApiDemo access`,
+    })
+    if (attachPolicy) {
+      invokeDemoApisPolicy.attachToRole(role)
+    }
+    cdk.Tag.add(role, 'Team', teamName)
+    cfnOutput(this, `${roleName}Name`, role.roleName)
+    return role
+  }
+
+  private createDemoRoleAllAccess(invokeThisApiPolicy: iam.Policy, roleName: string): iam.Role {
+    const role = new iam.Role(this, roleName, {
+      roleName,
+      assumedBy: new iam.AccountRootPrincipal(),
+      description: 'Role that can access Public Demo API',
+    })
+    invokeThisApiPolicy.attachToRole(role)
+    cfnOutput(this, `${roleName}Name`, role.roleName)
+    return role
+  }
+
+  private createDemoRole3() {
+    const { account, region } = cdk.Stack.of(this)
+
+    const roleName = 'PublicDemoRole3'
+    const role = new iam.Role(this, roleName, {
+      roleName,
+      assumedBy: new iam.AccountRootPrincipal(),
+      description: 'Role that invoke any API and use GET with Team demo',
+    })
+    role.addToPolicy(
+      // execute-api:Invoke doesn't appear to support aws:ResourceTag condition
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['execute-api:Invoke'],
+        resources: [`arn:aws:execute-api:${region}:${account}:*`],
+      })
+    )
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['apigateway:GET'],
+        resources: [`arn:aws:apigateway:${region}:${account}:/*`],
+        conditions: {
+          StringEquals: {
+            'aws:ResourceTag/Team': 'demo',
+          },
+        },
+      })
+    )
+  }
+
+  /**
+   * Group that can invoke anything on the public API
+   */
+  private createFullAccessGroup(api: apigw.RestApi): iam.Group {
+    const group = new iam.Group(this, 'PublicApiFullAccessGroup')
+    // Could add ALLOW sts:AssumeRole for role that has this policy
+    new iam.Policy(this, 'PublicApiFullAccessPolicy', {
+      groups: [group],
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['execute-api:Invoke'],
+          resources: [api.arnForExecuteApi()],
+        }),
+      ],
+    })
+    cfnOutput(this, 'ApiFullAccessGroup', group.groupName)
+    return group
   }
 
   private addMethodsNonVersioned(root: apigw.IResource) {
