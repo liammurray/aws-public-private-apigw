@@ -49,7 +49,7 @@
     "@types/source-map-support": "^0.5.1",
     "@typescript-eslint/eslint-plugin": "^2.24.0",
     "@typescript-eslint/parser": "^2.24.0",
-    "aws-sdk": "^2.710.0",
+    "aws-sdk": "^2.814.0",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
     "cpx": "^1.5.0",
